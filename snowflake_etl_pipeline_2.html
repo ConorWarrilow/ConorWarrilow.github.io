@@ -1,0 +1,605 @@
+<!DOCTYPE HTML>
+<!--
+	Phantom by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Generic - Phantom by HTML5 UP</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
+		<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+		<script>hljs.highlightAll();</script>
+		<style>
+
+		</style>
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+		<div id="wrapper">
+			<!-- Header -->
+			<header id="header">
+				<div class="inner">
+					<!-- Logo -->
+					<a href="index.html" class="logo">
+						<span class="symbol"><img src="images/Data_icon_morning_teal.svg" alt="" /></span><span class="title">the data learning hub</span>
+					</a>
+					<!-- Nav -->
+					<nav>
+						<ul>
+							<li><a href="#menu">Menu</a></li>
+						</ul>
+					</nav>
+				</div>
+			</header>
+
+			<!-- Menu -->
+			<nav id="menu">
+				<h2><img src="images/Data_icon_morning_teal.svg" alt=""/>Menu</h2>
+				<ul>
+					<li><a href="index.html">Home</a></li>
+					<li><a href="generic.html">Ipsum veroeros</a></li>
+					<li><a href="generic.html">Tempus etiam</a></li>
+					<li><a href="generic.html">Consequat dolor</a></li>
+					<li><a href="elements.html">Elements</a></li>
+				</ul>
+			</nav>
+
+			<!-- Main -->
+			<div id="main">
+				<div class="inner">
+					<h1>Snowflake Pipelines (Part 2)</h1>
+          <hr>
+          <h2 class="minor">contents</h2>
+					<li><a href="#sns-topic">Creating an SNS Topic</a></li>
+					<li><a href="#formatting-the-data">Formatting the Data</a></li>
+					<li><a href="#enriching-the-data">Enriching the Data</a></li>
+					<li><a href="#summary">Summary</a></li>
+					<br><br>
+
+					<span class="image main"><img src="images/pic13.jpg" alt="" /></span>
+					<p>In part 1 we figured out how to create a stage using an s3 bucket, load the data in using the correct file format, 
+                        perform some basic transformations using the snowflake marketplace, and finally locked down our table.</p>
+                    <p>Next we'll figure out to create an automated, semi event-driven pipeline with just a few extra lines of code.</p></br>
+                    <span class="image main"><img src="images/snowflake_etl_pipeline/architecture_diagram.jpg" alt="dfsdf" /></span>
+                    
+                    <p>Firstly, in order for our pipeline to be event driven, we need a way to notify snowflake when new data arrives. 
+                        That's where the SNS topic comes in. The bucket we'll be using already has an SNS topic setup for us, 
+                        but if you'd like to use your own bucket then follow the steps below, otherwise skip ahead to the automation stage.</p>
+
+
+
+
+                    <h2 id = "sns-topic" class="minor">Creating an SNS Topic</h2>
+
+					<p>First, login to your AWS console, navigate to SNS and begin creating a new topic. Select standard topic, 
+                        name the topic (you can give it a matching display name for simplicity), and then create it.</p>
+                        <p>Next, copy the ARN and head over to snowflake. Enter the following:</p>
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+select system$get_aws_sns_iam_policy('your-sns-arn');
+                            </code></pre>
+                        </div>
+
+
+                        <p>It should return a json policy similar to below:</p>
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="JSON">
+{"Version":"2012-10-17",
+ "Statement":[
+    {"Sid":"1",
+     "Effect":"Allow",
+     "Principal":{
+        "AWS":"arn:aws:iam::637423551209:user/stuff" //Copy 
+      },
+     "Action":["sns:Subscribe"],
+     "Resource":["arn:aws:sns:ap-southeast-2:numbersbeepboop:test-sns-topic"]
+     }
+   ]
+ }
+                            </code></pre>
+                        </div>
+
+
+                        <p>Copy the IAM ARN and navigate back to your SNS topic. Select 'access policy' and hit edit. It should look like the following:</p>
+
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="JSON">
+{
+  "Version": "2008-10-17",
+  "Id": "__default_policy_ID",
+  "Statement": [
+    {
+      "Sid": "__default_statement_ID",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": [
+        "SNS:Publish",
+        "SNS:RemovePermission",
+        "SNS:SetTopicAttributes",
+        "SNS:DeleteTopic",
+        "SNS:ListSubscriptionsByTopic",
+        "SNS:GetTopicAttributes",
+        "SNS:AddPermission",
+        "SNS:Subscribe"
+      ],
+      "Resource": "<YOUR-SNS-ARN>", //copy
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceOwner": "<YOUR-ACCOUNT-ID>" //copy
+        }
+      }
+    }
+  ]
+}
+//paste IAM ARN here 
+//Paste SNS ARN here 
+//Paste account ID here
+                            </code></pre>
+                        </div>               
+
+                        <p>I won't dive too deep into the details (yet), but in simple terms we need to give permissions to your snowflake account, as well as permissions for your 
+                            sns topic and s3 bucket to interact with one another. The original policy contains both your SNS ARN and your account id. 
+                            First, paste the IAM ARN you copied from snowflake below the policy, 
+                            followed by the SNS ARN and account id. Once that's sorted, replace your current policy with the 
+                            policy below (without deleting the ID/ARNs we pasted).</p>
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="JSON">
+{
+  "Version": "2008-10-17",
+  "Id": "__default_policy_ID",
+  "Statement": [
+    {
+      "Sid": "__default_statement_ID",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": [
+        "SNS:GetTopicAttributes",
+        "SNS:SetTopicAttributes",
+        "SNS:AddPermission",
+        "SNS:RemovePermission",
+        "SNS:DeleteTopic",
+        "SNS:Subscribe",
+        "SNS:ListSubscriptionsByTopic",
+        "SNS:Publish",
+        "SNS:Receive"
+      ],
+      "Resource": "<YOUR-SNS-ARN>", //SNS ARN
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceOwner": "<YOUR-ACCOUNT-ID>" //Account ID
+        }
+      }
+    },
+    {
+      "Sid": "1",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "<SNOWFLAKE-USER-IAM>" //IAM ARN
+      },
+      "Action": "sns:Subscribe",
+      "Resource": "<YOUR-SNS-ARN>" //SNS ARN
+    },
+    {
+      "Sid": "s3-event-notifier",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "s3.amazonaws.com"
+      },
+      "Action": "SNS:Publish",
+      "Resource": "<YOUR-SNS-ARN>", //SNS ARN
+      "Condition": {
+        "ArnLike": {
+          "aws:SourceArn": "<YOUR-BUCKET-ARN>" //s3 Bucket ARN
+        }
+      }
+    }
+  ]
+}
+                            </code></pre>
+                        </div>   
+
+
+                        <p>add your SNS ARN, account ID, and IAM ARN back the correct locations. 
+                            At this point you'll need to fetch your s3 bucket ARN too. Once you've completed the above, save the new policy.</p>
+
+                        <p>If you're unfamiliar with AWS policies, we'll break down what's going on:</p>
+
+                        <ul>
+                            <li>Sid (statement ID): An optional identifier provided for a policy statement. You can assign a Sid value to each statement. 
+                                Just think of it as a way to identify each statement with a name.</li>
+                            <li>Effect: Self explanatory, allows or denies the 'principal' access to a resource.</li>
+                            <li>Principal: The 'who' or 'what' in the context of accessing a resource e.g. a person or service such as an EC2 instance.</li>
+                            <li>Action: Simply the action taking place.</li>
+                            <li>Resource: the object or objects the statement covers. In our case, the SNS topic.</li>
+                            <li>Condition: lets you specify conditions for when a policy is in effect, or is allowed to take effect. 
+                                In our case, s3 is allowed to publish our SNS topic on the condition that the s3 bucket ARN matches a specific value.</li>
+
+
+
+
+                        </ul>
+                        
+                        <p>Lastly, head over to your bucket, select properties, scroll down to event notifications and hit 
+                            'create event notification'. In the object creation section of event types, select the 'put' option. Scroll down to the destination options, 
+                            select SNS and choose the topic you created. Save your topic and take a deep breath. Its finally over. The sns topic is born.</p>
+                        
+                        <h2>Automation Part 1: Snowpipe</h2>
+                        
+                        <p>We created the underlying structure of our pipeline in part one. Now it's time to automate it. Before we start, we'll merge a couple of steps into one.</p>
+                        <p>Earlier on we created the table PL_GAME_LOGS and our view PL_LOGS using the following code:</p>
+                        
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+-- Gets the files into the table
+COPY INTO PL_GAME_LOGS
+FROM @uni_kishore_pipeline
+file_format = (format_name = ff_json_logs);
+
+-- Creates a view of the table
+CREATE OR REPLACE VIEW PL_LOGS as (
+select
+RAW_LOG:agent::text as AGENT,
+RAW_LOG:user_event::text as USER_EVENT,
+RAW_LOG:user_login::text as USER_LOGIN,
+RAW_LOG:datetime_iso8601::TIMESTAMP_NTZ as datetime_iso8601,
+FROM PL_GAME_LOGS
+);
+                            </code></pre>
+                        </div>   
+
+
+
+                        <p>These steps can be done together using CTAS. In addition, we can add metadata such as the file name, 
+                            row number and time of ingestion. We'll start by creating the new table format.</p>
+                        
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+CREATE TABLE ed_pipeline_logs as (
+  SELECT 
+    METADATA$FILENAME as log_file_name --new metadata column
+  , METADATA$FILE_ROW_NUMBER as log_file_row_id --new metadata column
+  , current_timestamp(0) as load_ltz --new local time of load
+  , get($1,'datetime_iso8601')::timestamp_ntz as DATETIME_ISO8601
+  , get($1,'user_event')::text as USER_EVENT
+  , get($1,'user_login')::text as USER_LOGIN
+  , get($1,'ip_address')::text as IP_ADDRESS    
+  FROM @RAW.UNI_KISHORE_PIPELINE
+  (file_format => 'ff_json_logs')
+);
+                            </code></pre>
+                        </div>   
+
+                        <p>Now all we need to do is automate the process whenever a new file arrives. This is done using a snowpipe with the sns topic. 
+                            Note: at this point it may be necessary to provide your snowflake role with permission to execute tasks (and managed tasks).</p>
+                        
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+grant execute task on account to role YOUR_ROLE;
+grant execute managed task on account to role YOUR_ROLE;
+
+CREATE OR REPLACE PIPE PIPE_GET_NEW_FILES
+auto_ingest=true
+aws_sns_topic='arn:aws:sns:us-west-2:321463406630:dngw_topic'
+AS 
+COPY INTO ED_PIPELINE_LOGS
+FROM (
+    SELECT 
+    METADATA$FILENAME as log_file_name 
+  , METADATA$FILE_ROW_NUMBER as log_file_row_id 
+  , current_timestamp(0) as load_ltz 
+  , get($1,'datetime_iso8601')::timestamp_ntz as DATETIME_ISO8601
+  , get($1,'user_event')::text as USER_EVENT
+  , get($1,'user_login')::text as USER_LOGIN
+  , get($1,'ip_address')::text as IP_ADDRESS    
+  FROM @RAW.UNI_KISHORE_PIPELINE
+)
+file_format = (format_name = ff_json_logs);
+                            </code></pre>
+                        </div>   
+
+                        <p>Whenever a new file is sent to the s3 bucket our pipeline will automatically copy it into ed_pipeline_logs.</p>
+                        
+                        <h2>Automation Part 2: Tasks</h2>
+
+                        <p>Next, we need a way to get new data into LOGS_ENHANCED without simply creating a 
+                            table and without creating duplicates. One way of doing this is an 
+                            insert merge for rows that are new (not matched).</p>
+
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+MERGE INTO ENHANCED.LOGS_ENHANCED e
+USING (
+    SELECT logs.ip_address
+    , logs.user_login as GAMER_NAME
+    , logs.user_event as GAME_EVENT_NAME
+    , logs.datetime_iso8601 as GAME_EVENT_UTC
+    , city
+    , region
+    , country
+    , timezone as GAMER_LTZ_NAME
+    , CONVERT_TIMEZONE('UTC', timezone, logs.datetime_iso8601) as GAME_EVENT_LTZ
+    , DAYNAME(GAME_EVENT_LTZ) as DOW_NAME
+    , TOD_NAME
+    from RAW.ED_PIPELINE_LOGS logs -- change to ed_pipeline_logs
+    JOIN IPINFO_GEOLOC.demo.location loc 
+    ON IPINFO_GEOLOC.public.TO_JOIN_KEY(logs.ip_address) = loc.join_key
+    
+    AND IPINFO_GEOLOC.public.TO_INT(logs.ip_address) 
+    BETWEEN start_ip_int AND end_ip_int
+    
+    JOIN AGS_GAME_AUDIENCE.RAW.TIME_OF_DAY_LU lu
+    ON HOUR(GAME_EVENT_LTZ) = lu.hour
+) r
+    ON r.GAMER_NAME = e.gamer_name
+    and r.GAME_EVENT_UTC = e.game_event_utc
+    and r.GAME_EVENT_NAME = e.game_event_name 
+    WHEN NOT MATCHED THEN
+INSERT 
+    (IP_ADDRESS, 
+    GAMER_NAME, 
+    GAME_EVENT_NAME, 
+    GAME_EVENT_UTC, 
+    CITY, 
+    REGION, 
+    COUNTRY, 
+    GAMER_LTZ_NAME, 
+    GAME_EVENT_LTZ, 
+    DOW_NAME, 
+    TOD_NAME) 
+VALUES (
+    IP_ADDRESS, 
+    GAMER_NAME, 
+    GAME_EVENT_NAME, 
+    GAME_EVENT_UTC, 
+    CITY, 
+    REGION, 
+    COUNTRY, 
+    GAMER_LTZ_NAME, 
+    GAME_EVENT_LTZ, 
+    DOW_NAME, 
+    TOD_NAME);
+                            </code></pre>
+                        </div>   
+
+                        <p>This adds any records from PL_LOGS into LOGS_ENHANCED which don't already exist.</p>
+                        
+                        <p>Next, we'll create our merge as a task, which will automatically run every 5 minutes</p>
+
+
+
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+CREATE OR REPLACE TASK LOAD_LOGS_ENHANCED
+    USER_TASK_MANAGED_INITIAL_WAREHOUSE_SIZE='XSMALL'
+    schedule = '5 minute'
+    as
+MERGE INTO AGS_GAME_AUDIENCE.ENHANCED.LOGS_ENHANCED e
+USING .... -- rest of code cut out
+                            </code></pre>
+                        </div>   
+
+                        <p>After executing both tasks, new data added to the s3 bucket is automatically 
+                            added to the ED_PIPELINE_LOGS table, and then added to the LOGS_ENHANCED table 
+                            after being transformed.</p>
+
+                        <h2>One last Improvement (CDC)</h2>
+                        
+                        <p>While our pipeline works without any problems, we can improve it using CDC (change data capture). In short, 
+                            CDC allows you to determine and track changes in data, such as new data being added to the ED_PIPELINE_LOGS table. 
+                            This is a basic example of CDC; it can become extremely complex. We'll use the information from CDC to run our 
+                            insert merge only on the newly added data, saving compute resources. To do this we simply apply the CDC stream to 
+                            the ED_PIPELINE_LOGS table.</p>
+                        
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+create or replace stream ags_game_audience.raw.ed_cdc_stream 
+on table AGS_GAME_AUDIENCE.RAW.ED_PIPELINE_LOGS;
+                            </code></pre>
+                        </div>   
+
+                        <p>we'll also need to alter our insertion merge query, as it'll be pulling data from ED_CDC_STREAM rather than ED_PIPELINE_LOGS. 
+                            In addition, we'll add a when clause preventing the merge from executing unless new data is present, saving even more compute resources.</p>
+
+                        <div class="code-container">
+                            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                            <pre><code class="SQL">
+    CREATE OR REPLACE TASK CDC_LOAD_LOGS_ENHANCED -- new task name
+    USER_TASK_MANAGED_INITIAL_WAREHOUSE_SIZE='XSMALL'
+    schedule = '5 minute'
+WHEN system$stream_has_data('ed_cdc_stream') -- when clause
+    as
+MERGE INTO ENHANCED.LOGS_ENHANCED e
+USING (
+    SELECT logs.ip_address
+    , cdc.user_login as GAMER_NAME -- change alias to cdc from logs
+    , cdc.user_event as GAME_EVENT_NAME -- change alias to cdc from logs
+    , cdc.datetime_iso8601 as GAME_EVENT_UTC -- change alias to cdc from logs
+    , city
+    , region
+    , country
+    , timezone as GAMER_LTZ_NAME
+    , CONVERT_TIMEZONE('UTC', timezone, logs.datetime_iso8601) as GAME_EVENT_LTZ
+    , DAYNAME(GAME_EVENT_LTZ) as DOW_NAME
+    , TOD_NAME
+    from RAW.ED_CDC_STREAM cdc -- change to ED_CDC_STREAM
+    JOIN IPINFO_GEOLOC.demo.location loc 
+    ON IPINFO_GEOLOC.public.TO_JOIN_KEY(logs.ip_address) = loc.join_key
+    
+    AND IPINFO_GEOLOC.public.TO_INT(logs.ip_address) 
+    BETWEEN start_ip_int AND end_ip_int
+    
+    JOIN AGS_GAME_AUDIENCE.RAW.TIME_OF_DAY_LU lu
+    ON HOUR(GAME_EVENT_LTZ) = lu.hour
+) r
+    ON r.GAMER_NAME = e.gamer_name
+    and r.GAME_EVENT_UTC = e.game_event_utc
+    and r.GAME_EVENT_NAME = e.game_event_name 
+    WHEN NOT MATCHED THEN
+INSERT 
+  -- rest of query...
+                            </code></pre>
+                        </div>   
+
+                        <p>Finally we have a fully functioning ELT pipeline that's mostly 
+                            (though not entirely) event driven. The same logic shown here can be 
+                            extended to files of many formats, across multiple cloud providers.</p>
+
+                        <p>If you've finished this guide and would like something more challenging then consider trying the end to end data product project! </p>
+                        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                </div>
+            </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<!-- Footer -->
+			<footer id="footer">
+				<div class="inner">
+					<section>
+						<h2>Have a question or suggestion?</br> Message me!</h2>
+
+                        <form method="post" action="https://submit-form.com/O7IeSfETQ" id="contactForm">
+                            <div class="fields">
+                                <div class="field half">
+                                    <input type="text" name="name" id="name" placeholder="Name" required />
+                                </div>
+                                <div class="field half">
+                                    <input type="email" name="email" id="email" placeholder="Email" required />
+                                </div>
+                                <div class="field">
+                                    <textarea name="message" id="message" placeholder="Message" required></textarea>
+                                </div>
+                            </div>
+                            <ul class="actions">
+                                <li><input type="submit" value="Send" class="primary" id="submitButton" /></li>
+                            </ul>
+                        </form>
+
+					</section>
+					<section>
+						<h2>Follow</h2>
+						<ul class="icons">
+              <li>
+                <a href="https://www.linkedin.com/in/conorwarrilow/" target="_blank" rel="noopener noreferrer" class="icon brands style2 fa-linkedin">
+                  <span class="label">Linkedin</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/ConorWarrilow" target="_blank" rel="noopener noreferrer" class="icon brands style2 fa-github">
+                  <span class="label">GitHub</span>
+                </a>
+              </li>
+						</ul>
+					</section>
+					<ul class="copyright">
+						<li>&copy; TheDataLearningHub. All rights reserved</li>
+					</ul>
+				</div>
+			</footer>
+		</div>
+
+		<!-- Scripts -->
+
+		<script src="assets/js/jquery.min.js"></script>
+		<script src="assets/js/browser.min.js"></script>
+		<script src="assets/js/breakpoints.min.js"></script>
+		<script src="assets/js/util.js"></script>
+		<script src="assets/js/main.js"></script>
+    <script src="assets/js/copycode.js"></script>
+    <script src="assets/js/sendemail.js"></script>
+	</body>
+</html>
+
+

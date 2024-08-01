@@ -1,0 +1,529 @@
+<!DOCTYPE HTML>
+<!--
+	Phantom by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Generic - Phantom by HTML5 UP</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
+		<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+		<script>hljs.highlightAll();</script>
+		<style>
+
+		</style>
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+		<div id="wrapper">
+			<!-- Header -->
+			<header id="header">
+				<div class="inner">
+					<!-- Logo -->
+					<a href="index.html" class="logo">
+						<span class="symbol"><img src="images/Data_icon_morning_teal.svg" alt="" /></span><span class="title">The data learning hub</span>
+					</a>
+					<!-- Nav -->
+					<nav>
+						<ul>
+							<li><a href="#menu">Menu</a></li>
+						</ul>
+					</nav>
+				</div>
+			</header>
+
+			<!-- Menu -->
+			<nav id="menu">
+				<h2><img src="images/Data_icon_morning_teal.svg" alt=""/>Menu</h2>
+				<ul>
+					<li><a href="index.html">Home</a></li>
+					<li><a href="generic.html">Ipsum veroeros</a></li>
+					<li><a href="generic.html">Tempus etiam</a></li>
+					<li><a href="generic.html">Consequat dolor</a></li>
+					<li><a href="elements.html">Elements</a></li>
+				</ul>
+			</nav>
+
+			<!-- Main -->
+			<div id="main">
+				<div class="inner">
+					<h1>Snowflake Pipelines (Part 1)</h1>
+					<li><a href="#external-stages">External Stages</a></li>
+					<li><a href="#formatting-the-data">Formatting the Data</a></li>
+					<li><a href="#enriching-the-data">Enriching the Data</a></li>
+					<li><a href="#summary">Summary</a></li>
+					<br><br>
+
+					<span class="image main"><img src="images/pic13.jpg" alt="" /></span>
+					<p>If you’re currently working in data, you’ve likely heard of snowflake, and for good reason. 
+						Snowflake is a powerful data warehousing solution, but picking the right tool for the job 
+						can get tricky if you’ve never used it before. In part 1 of this 2 part series we’ll begin 
+						by exploring how we can ingest data from an external stage into snowflake and perform a simple 
+						ELT process. Then in part 2 we’ll learn how to integrate what we’ve done into a fully automated pipeline.</p></br>
+					<h2 id="external-stages">External stages</h2>
+					<p>For those who don’t know, external stages, whether you’re using AWS, Azure, or GCP, allow you to create a ‘window’ 
+						to an external data source. If you have data in an s3 bucket, then creating an external stage in snowflake will 
+						allow you to access data within the bucket without needing to transfer it. To begin, we’ll set up our external stage.</p></br>
+					<h2>Creating the external stage</h2>
+					<p>Of course, You’ll need an s3 bucket (or the equivalent for azure/GCP) that you can access. For simplicity, we’ll be using 
+						one provided by snowflake in their data engineering course called uni-kishore-pipeline, which has new data added every 
+						5 minutes containing the login/logout events of a videogame’s player base. If you want to follow along and use the same 
+						bucket, you’ll need a snowflake account in US West Oregon.</p>
+					<p>If you’d like to use your own s3 bucket, the steps are as follows:</br></br>
+						Create an IAM policy with the following permissions (you can always add more later):</p>
+					<ol>
+						<li>PutObject</li>
+						<li>GetObject</li>
+						<li>ListObject</li>
+						<li>DeleteObject</li>
+						<li>GetBucketLocation</li>
+						<li>GetObjectVersion</li>
+					</ol>
+					<p>Create an IAM user, add the policy, and then navigate to the security credentials to generate an access key. 
+						Select ‘other’ as the use case if you’re not overly familiar with access keys. Be sure to save your keys.</br></br>
+
+						Next, head over to snowflake and enter the following:</p>
+
+
+
+
+
+
+
+
+
+
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+CREATE STAGE your_personal_stage
+url = 's3://your-personal-bucket/folder/'
+credentials = (aws_key_id = "public-key", aws_secret_key = "super-secret-key");
+                        </code></pre>
+                    </div>
+    
+                    <p>You should now have access to the contents of your bucket. You can check by entering:</p>
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+list @your_personal_stage;
+                        </code></pre>
+                    </div>
+                    </br>
+                    <h2 id = "formatting-the-data">Formatting the Data</h2>
+                    <p>Next, we need to figure out the format of the data. One way to check is to open a file in a basic text editor. 
+                        We can also use SQL to take a look.</p>
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+-- listing all files contained in the stage
+list @uni_kishore_pipeline;
+                        </code></pre>
+                    </div>
+                    <span class="image main"><img src="images/snowflake_etl_pipeline/stage-files1.jpg" alt="" /></span>
+    
+    
+    
+    
+    
+    
+    
+    
+                    <p>All files are json. We'll take a closer look at the contents.</p>
+
+                    
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+select $1, $2, $3, $4, $5 from
+@uni_kishore_pipeline;
+                        </code></pre>
+                    </div>
+
+
+
+
+
+
+					<span class="image main"><img src="images/snowflake_etl_pipeline/stage-files2.jpg" alt="" /></span>
+
+
+
+					
+
+					<p>It seems we have json files without an outer array. We’ll create the file format as such.</p>
+
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+create file format FF_JSON_LOGS
+type = JSON
+STRIP_OUTER_ARRAY = FALSE
+                        </code></pre>
+                    </div>
+
+
+
+					<p>Next we’ll create a table and add our files, and then create a view with the data formatted nicely.</p>
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+CREATE OR REPLACE TABLE PL_GAME_LOGS ( -- PL is just short for 'pipeline'
+RAW_LOG VARIANT
+);
+
+COPY INTO PL_GAME_LOGS
+FROM @uni_kishore_pipeline
+file_format = (format_name = ff_json_logs);
+
+
+CREATE OR REPLACE VIEW PL_LOGS as (
+select
+RAW_LOG:ip_address::text as IP_ADDRESS,
+RAW_LOG:user_event::text as USER_EVENT,
+RAW_LOG:user_login::text as USER_LOGIN,
+RAW_LOG:datetime_iso8601::TIMESTAMP_NTZ as datetime_iso8601,
+FROM PL_GAME_LOGS
+);
+                        </code></pre>
+                    </div>
+					
+					<p>The view will look as follows:</p>
+
+					<span class="image main"><img src="images/snowflake_etl_pipeline/view1.jpg" alt="" /></span>
+
+
+
+
+
+					<h2 id="enriching-the-data">Enriching the Data</h2>
+					
+					<p>We have our data in the correct format, but we only have four columns. We’re also missing information about the UTC. We do have the IP addresses, 
+						and using the snowflake marketplace, we can download the ipinfo IP geolocation database to enrich our data.</p>
+
+					<p>The ipinfo database comes with many functions built in, and we’ll use them as follows:</p>
+					<ul>
+						<li>TO_JOIN_KEY: Converts IP addresses to specific keys that can be joined on.</li>
+						<li>TO_INT: Converts the IP address to integers, allowing us to compare integer values rather than strings (much more efficient).</li>
+						<li>CONVERT_TIMEZONE: Allows us to add the UTC information.</li>
+						<li>DAYNAME: Adds the day of the week.</li>
+					</ul>
+
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+SELECT logs.ip_address
+, logs.user_login
+, logs.user_event
+, logs.datetime_iso8601
+, city
+, region
+, country
+, timezone
+, CONVERT_TIMEZONE('UTC', timezone, logs.datetime_iso8601) as GAME_EVENT_LTZ
+, DAYNAME(GAME_EVENT_LTZ) as DOW_NAME
+from PL_LOGS logs
+
+JOIN IPINFO_GEOLOC.demo.location loc 
+ON IPINFO_GEOLOC.public.TO_JOIN_KEY(logs.ip_address) = loc.join_key
+
+AND IPINFO_GEOLOC.public.TO_INT(logs.ip_address) 
+BETWEEN start_ip_int AND end_ip_int;
+                        </code></pre>
+                    </div>
+
+
+					<p>Often the exact time of day isn’t particularly useful, so we’ll create a lookup table as well to 
+						encode the times into categories and add it to our view. We’ll also rename a few more columns.</p>
+
+
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+create or replace table time_of_day_lu (
+    hour number
+   ,tod_name varchar(25)
+);
+
+insert into time_of_day_lu values
+(6,'Early morning'),
+(7,'Early morning'),
+(8,'Early morning'),
+(9,'Mid-morning'),
+(10,'Mid-morning'),
+(11,'Late morning'),
+(12,'Late morning'),
+(13,'Early afternoon'),
+(14,'Early afternoon'),
+(15,'Mid-afternoon'),
+(16,'Mid-afternoon'),
+(17,'Late afternoon'),
+(18,'Late afternoon'),
+(19,'Early evening'),
+(20,'Early evening'),
+(21,'Late evening'),
+(22,'Late evening'),
+(23,'Late evening'),
+(0,'Late at night'),
+(1,'Late at night'),
+(2,'Late at night'),
+(3,'Toward morning'),
+(4,'Toward morning'),
+(5,'Toward morning');
+
+
+-- Our updated view
+
+SELECT logs.ip_address
+, logs.user_login as GAMER_NAME
+, logs.user_event as GAME_EVENT_NAME
+, logs.datetime_iso8601 as GAME_EVENT_UTC
+, city
+, region
+, country
+, timezone as GAMER_LTZ_NAME
+, CONVERT_TIMEZONE('UTC', timezone, logs.datetime_iso8601) as GAME_EVENT_LTZ
+, DAYNAME(GAME_EVENT_LTZ) as DOW_NAME
+, TOD_NAME
+from PL_LOGS logs
+
+JOIN IPINFO_GEOLOC.demo.location loc 
+ON IPINFO_GEOLOC.public.TO_JOIN_KEY(logs.ip_address) = loc.join_key
+
+AND IPINFO_GEOLOC.public.TO_INT(logs.ip_address) 
+BETWEEN start_ip_int AND end_ip_int
+
+JOIN time_of_day_lu lu
+ON HOUR(GAME_EVENT_LTZ) = lu.hour;
+                        </code></pre>
+                    </div>
+
+					<p>Taking another look at the data, we’re left with far more information to go off.</p>
+
+					<span class="image main"><img src="images/snowflake_etl_pipeline/enriched1.jpg" alt="" /></span>
+
+
+					<p>After enriching our data it’d be a good idea to save it. We’ll create a new table using CTAS called LOGS_ENHANCED.</p>
+
+                    <div class="code-container">
+                        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+                        <pre><code class="SQL">
+CREATE TABLE LOGS_ENHANCED AS (
+SELECT logs.ip_address
+, logs.user_login as GAMER_NAME
+, logs.user_event as GAME_EVENT_NAME
+, logs.datetime_iso8601 as GAME_EVENT_UTC
+, city
+, region
+, country
+, timezone as GAMER_LTZ_NAME
+, CONVERT_TIMEZONE('UTC', timezone, logs.datetime_iso8601) as GAME_EVENT_LTZ
+, DAYNAME(GAME_EVENT_LTZ) as DOW_NAME
+, TOD_NAME
+from PL_LOGS logs
+
+JOIN IPINFO_GEOLOC.demo.location loc 
+ON IPINFO_GEOLOC.public.TO_JOIN_KEY(logs.ip_address) = loc.join_key
+
+AND IPINFO_GEOLOC.public.TO_INT(logs.ip_address) 
+BETWEEN start_ip_int AND end_ip_int
+
+JOIN AGS_GAME_AUDIENCE.RAW.TIME_OF_DAY_LU lu
+on HOUR(GAME_EVENT_LTZ) = lu.hour
+);
+                        </code></pre>
+                    </div>
+
+
+
+
+					<h2 id="summary">Summary</h2>
+					<p>So what have we done so far?</p>
+					<ol>
+						<li>Connected to our s3 bucket and created a stage</li>
+						<li>Explored the data and created an appropriate file format</li>
+						<li>Loaded the data into a table and created a view from the table</li>
+						<li>Enriched our data and locked it down as a table</li>
+						<li>With that out of the way we can move on to part 2, where we’ll have some fun creating a fully automated pipeline.</li>
+					</ol>
+
+					<p>With that out of the way we can move on to <a href="snowflake_etl_pipeline_2.html"><b>part 2</b></a>, where we’ll have some fun creating a fully automated pipeline.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+					<h1 id="data-is-stored-on-disk-and-processed-in-memory">Data is stored on disk and processed in memory</h1>
+					
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                </div>
+            </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			<!-- Footer -->
+			<footer id="footer">
+				<div class="inner">
+					<section>
+						<h2>Get in touch</h2>
+						<form method="post" action="#">
+							<div class="fields">
+								<div class="field half">
+									<input type="text" name="name" id="name" placeholder="Name" />
+								</div>
+								<div class="field half">
+									<input type="email" name="email" id="email" placeholder="Email" />
+								</div>
+								<div class="field">
+									<textarea name="message" id="message" placeholder="Message"></textarea>
+								</div>
+							</div>
+							<ul class="actions">
+								<li><input type="submit" value="Send" class="primary" /></li>
+							</ul>
+						</form>
+					</section>
+					<section>
+						<h2>Follow</h2>
+						<ul class="icons">
+							<li><a href="https://www.linkedin.com/in/conorwarrilow/" class="icon brands style2 fa-linkedin"><span class="label">Linkedin</span></a></li>
+							<li><a href="https://github.com/ConorWarrilow" class="icon brands style2 fa-github"><span class="label">GitHub</span></a></li>
+						</ul>
+					</section>
+					<ul class="copyright">
+						<li>&copy; TheDataLearningHub. All rights reserved</li>
+					</ul>
+				</div>
+			</footer>
+		</div>
+
+		<!-- Scripts -->
+
+		<script src="assets/js/jquery.min.js"></script>
+		<script src="assets/js/browser.min.js"></script>
+		<script src="assets/js/breakpoints.min.js"></script>
+		<script src="assets/js/util.js"></script>
+		<script src="assets/js/main.js"></script>
+        <script src="assets/js/copycode.js"></script>
+	</body>
+</html>
+
+
